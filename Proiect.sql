@@ -194,7 +194,28 @@ CREATE TABLE fotografii
 );
 
 INSERT INTO fotografii
-VALUES (1, );
+VALUES (1, 100, 'Poza1');
+
+INSERT INTO fotografii
+VALUES (2, 100, 'Piscina');
+
+INSERT INTO fotografii
+VALUES (3, 100, 'Poza speciala');
+
+INSERT INTO fotografii
+VALUES (4, 101, 'Prima poza');
+
+INSERT INTO fotografii
+VALUES (5, 102, 'Rasarit');
+
+INSERT INTO fotografii
+VALUES (6, 102, 'La meci');
+
+INSERT INTO fotografii
+VALUES (7, 103, 'Poza Anglia');
+
+INSERT INTO fotografii
+VALUES (8, 104, 'Gratar');
 
 select *
 from fotografii;
@@ -343,6 +364,141 @@ VALUES (24, TO_DATE('30/12/2023', 'DD/MM/YYYY'), 10);
 select *
 from istoric_parole;
  
+ --12
+
+--1. Sa se afiseze utilizatorii care au creat playlisturi, piesele din aceste playlisturi si artistul fiec?rei piese, in ordine crescatoare dupa nume. 
+
+SELECT u.nume, u.prenume, pm.playlist_nume, p.piesa_nume, p.artist_nume
+FROM utilizatori u, playlisturi_muzicale pm, piese p, playlisturi_si_piese pp
+WHERE u.utilizator_id = pp.utilizator_id
+and pp.piesa_id = p.piesa_id
+and pp.playlist_id = pm.playlist_id
+order by 1;
  
- 
+--2. Sa se afiseze utilizatorii care au o parol? cu nivelul de securitate mai mare de 6, numele ?i prenumele lor,
+--împreun? cu numele ora?ului, strada si parola. Utilizeaz? func?ii pe ?iruri de caractere pentru a transforma numele si prenumele în majuscule ?i
+--pentru a concatena numele ?i prenumele. Filtreaz? rezultatele pentru a include doar utilizatorii înregistra?i în ultimele 10 luni.
+SELECT UPPER(u.nume) nume, UPPER(u.prenume) prenume, CONCAT(u.nume, CONCAT(' ',u.prenume)) nume_complet, l.oras, a.strada,
+                                                                                        p.parola_nume, p.nivel_securitate
+FROM utilizatori u
+JOIN parole p ON u.parola_id = p.parola_id
+JOIN locatii l ON u.locatie_id = l.locatie_id
+JOIN adrese a ON l.adresa_id = a.adresa_id
+WHERE p.nivel_securitate > 6
+  AND u.data_inregistrare > ADD_MONTHS(SYSDATE, -10);
+
+--3.Selecteaz? utilizatorii care sunt membri ai grupului "La munca", împreun? cu numele albumelor lor ?i
+--num?rul total de fotografii din aceste albume. Utilizeaz? DECODE pentru a afi?a un mesaj personalizat daca sunt una sau mai multe fotografii.
+--Sa se ordoneze rezultatele obtinute dupa coloana numelui utilizatorului.
+SELECT u.utilizator_id, u.nume, u.prenume, a.album_nume,(SELECT COUNT(*)
+                                                         FROM fotografii f
+                                                         WHERE f.album_id = a.album_id) numar_fotografii,
+                                                         DECODE((SELECT COUNT(*)           
+                                                         FROM fotografii f
+                                                         WHERE f.album_id = a.album_id),
+                                                         1, 'O singura fotografie',
+                                                         'Mai multe fotografii') status_fotografii
+FROM utilizatori u, utilizatori_si_grupuri ug, grupuri g, albume_fotografii a
+WHERE u.utilizator_id = ug.utilizator_id
+and  ug.grup_id = g.grup_id
+and  u.utilizator_id = a.utilizator_id
+and g.denumire = 'La munca'
+ORDER BY u.nume;
+
+--4. Selecteaz? utilizatorii care sunt membri ai grupului "Scoala", împreun? cu ora?ul în care
+--locuiesc. Utilizeaz? un bloc de cerere WITH pentru a ob?ine utilizatorii din grupul "Scoala".
+WITH utilizatori_grup_scoala as (
+    SELECT ug.utilizator_id
+    FROM utilizatori_si_grupuri ug, grupuri g
+    WHERE ug.grup_id = g.grup_id
+    and g.denumire = 'Scoala'
+)
+SELECT INITCAP(u.nume), INITCAP(u.prenume), l.oras
+FROM utilizatori u, locatii l
+WHERE u.locatie_id = l.locatie_id
+and u.utilizator_id IN (SELECT utilizator_id FROM utilizatori_grup_scoala);
+
+--5. Sa se afiseze ora?ele ?i num?rul de utilizatori din fiecare ora?.
+--Filtreaz? rezultatele pentru a avea doar orase care contin litera 'u'.
+SELECT l.oras, COUNT(u.utilizator_id) numar_utilizatori
+FROM utilizatori u, locatii l
+WHERE u.locatie_id = l.locatie_id
+GROUP BY l.oras
+HAVING l.oras like '%u%';
+
+--a. ?terge toate albumele care nu con?in nicio fotografie.
+
+INSERT INTO albume_fotografii
+VALUES (110, 21, 'Album gol', TO_DATE('02/02/2024', 'DD/MM/YYYY'));
+
+DELETE FROM albume_fotografii a
+WHERE a.album_id NOT IN (
+    SELECT f.album_id
+    FROM fotografii f
+);
+
+--b. Actualizeaz? adresa utilizatorilor care au creat cel pu?in un album, setând num?rul str?zii la 99.
+UPDATE adrese a
+SET a.numar_strada = 99
+WHERE a.adresa_id IN (
+    SELECT l.adresa_id
+    FROM locatii l
+    JOIN utilizatori u ON l.locatie_id = u.locatie_id
+    JOIN albume_fotografii af ON u.utilizator_id = af.utilizator_id
+);
+
+--c. Actualizeaz? nivelul de securitate al parolelor la 6 pentru utilizatorii care locuiesc în "Suceava".
+UPDATE parole p
+SET p.nivel_securitate = 6
+WHERE p.parola_id IN (
+    SELECT u.parola_id
+    FROM utilizatori u
+    JOIN locatii l ON u.locatie_id = l.locatie_id
+    WHERE l.oras = 'Suceava'
+);
+
+--Ob?ine?i o list? cu to?i utilizatorii ?i informa?iile lor (nume, prenume, email), loca?iile lor (ora?, ?ar?), grupurile
+--din care fac parte ?i numele albumelor lor, inclusiv utilizatorii care nu au loca?ii, grupuri sau albume asociate.
+SELECT u.nume, u.prenume, u.email, l.oras, l.tara, g.denumire, af.album_nume
+FROM utilizatori u
+LEFT JOIN locatii l ON u.locatie_id = l.locatie_id
+LEFT JOIN utilizatori_si_grupuri ug ON u.utilizator_id = ug.utilizator_id
+LEFT JOIN grupuri g ON ug.grup_id = g.grup_id
+LEFT JOIN albume_fotografii af ON u.utilizator_id = af.utilizator_id;
+
+
+--G?si?i utilizatorii care au ad?ugat toate piesele artistului Post Malone în oricare dintre playlisturile lor.
+
+SELECT u.utilizator_id, u.nume, u.prenume
+FROM utilizatori u
+WHERE NOT EXISTS (
+    SELECT p.piesa_id
+    FROM piese p
+    WHERE p.artist_nume = 'The Weeknd'
+    MINUS
+    SELECT pp.piesa_id
+    FROM playlisturi_si_piese pp
+    WHERE pp.utilizator_id = u.utilizator_id
+);
+
+
+--G?si?i top 3 utilizatori care au creat cele mai multe albume.
+
+SELECT *
+FROM (
+    SELECT u.utilizator_id, u.nume, u.prenume, COUNT(af.album_id) numar_albume
+    FROM utilizatori u
+    JOIN albume_fotografii af ON u.utilizator_id = af.utilizator_id
+    GROUP BY u.utilizator_id, u.nume, u.prenume
+    ORDER BY numar_albume DESC
+)
+WHERE ROWNUM <= 3;
+
+
+
+
+
+
+
+
  
